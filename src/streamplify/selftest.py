@@ -5,19 +5,17 @@
 import sys
 import time
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
-from .device import Deck, KEY_COUNT, KEY_SIZE
+from .device import KEY_COUNT, KEY_SIZE, Deck
+from .render import font as render_font
 
 COLORS = ["#c0392b", "#d35400", "#f39c12", "#27ae60", "#16a085", "#2980b9", "#8e44ad", "#2c3e50"]
 
 
 def label(text: str, bg: str) -> Image.Image:
     im = Image.new("RGB", (KEY_SIZE, KEY_SIZE), bg)
-    try:
-        font = ImageFont.truetype("DejaVuSans-Bold.ttf", 48)
-    except OSError:
-        font = ImageFont.load_default()
+    font = render_font(48)
     ImageDraw.Draw(im).text((KEY_SIZE // 2, KEY_SIZE // 2), text, fill="white", font=font, anchor="mm")
     return im
 

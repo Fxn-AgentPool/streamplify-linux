@@ -9,7 +9,6 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 
-import hid
 from PIL import Image
 
 VID, PID = 0x0100, 0x1000
@@ -51,12 +50,14 @@ class KeyEvent:
 
 class Deck:
     def __init__(self, vid: int = VID, pid: int = PID):
+        import hid  # lazy: lets the rest of the package work without libhidapi
+
         self._dev = hid.Device(vid, pid)
 
     def close(self) -> None:
         self._dev.close()
 
-    def __enter__(self) -> "Deck":
+    def __enter__(self) -> Deck:
         return self
 
     def __exit__(self, *exc) -> None:

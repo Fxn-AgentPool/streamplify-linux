@@ -1,0 +1,12 @@
+[Unit]
+Description=Streamplify DECK client
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/streamplify run
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical-session.target

@@ -29,6 +29,8 @@ from pathlib import Path
 from . import icons
 from .actions import HotkeyError, parse_combo
 from .device import COLS, KEY_COUNT, key_at
+from .screensaver import MODES as SAVER_MODES
+from .screensaver import ScreensaverConfig
 
 DEFAULT_PATH = Path("~/.config/streamplify/config.toml").expanduser()
 
@@ -74,6 +76,7 @@ class Config:
     start_page: str = "main"
     font: Path | None = None
     pages: dict[str, Page] = field(default_factory=dict)
+    screensaver: ScreensaverConfig = field(default_factory=ScreensaverConfig)
     path: Path | None = None
 
 
@@ -140,11 +143,32 @@ def _parse_key(where: str, raw: dict, base: Path) -> KeySpec:
     )
 
 
+def _parse_screensaver(raw) -> ScreensaverConfig:
+    if raw is False:
+        return ScreensaverConfig(after=0)
+    if not isinstance(raw, dict):
+        raise ConfigError("screensaver must be a table ([screensaver]) or false")
+    allowed = set(ScreensaverConfig.__dataclass_fields__)
+    unknown = set(raw) - allowed
+    if unknown:
+        raise ConfigError(f"screensaver: unknown field(s) {', '.join(sorted(unknown))}")
+    after = raw.get("after", 600)
+    if not isinstance(after, (int, float)) or after < 0:
+        raise ConfigError("screensaver.after must be seconds >= 0 (0 = never)")
+    if raw.get("mode", "clock") not in SAVER_MODES:
+        raise ConfigError(f"screensaver.mode must be one of {', '.join(SAVER_MODES)}")
+    b = raw.get("brightness", 20)
+    if not isinstance(b, int) or not 0 <= b <= 100:
+        raise ConfigError("screensaver.brightness must be 0-100")
+    return ScreensaverConfig(**{k: raw[k] for k in raw})
+
+
 def parse(data: dict, base: Path = Path(".")) -> Config:
     cfg = Config(
         brightness=int(data.get("brightness", 80)),
         start_page=data.get("start_page", "main"),
         font=Path(data["font"]).expanduser() if "font" in data else None,
+        screensaver=_parse_screensaver(data.get("screensaver", {})),
     )
     for name, raw_page in data.get("pages", {}).items():
         page = Page(name)

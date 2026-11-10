@@ -168,10 +168,39 @@ def test_reload_keeps_valid_page_and_redraws():
 
 # --- hotkeys ------------------------------------------------------------------
 
+@pytest.mark.parametrize("combo, expected", [
+    ("ctrl+shift+m", (["ctrl", "shift"], "m")),
+    ("Ctrl+Shift+F13", (["ctrl", "shift"], "F13")),
+    ("f24", ([], "F24")),
+    ("XF86AudioMute", ([], "XF86AudioMute")),       # case preserved
+    ("super+enter", (["super"], "Return")),
+    ("ctrl++", (["ctrl"], "plus")),
+    ("Win+L", (["super"], "l")),                    # single letters lowercased (no implicit shift)
+])
+def test_parse_combo(combo, expected):
+    from streamplify.actions import parse_combo
+    assert parse_combo(combo) == expected
+
+
+@pytest.mark.parametrize("bad", ["", "ctrl+", "ctlr+c", "+x"])
+def test_parse_combo_rejects(bad):
+    from streamplify.actions import HotkeyError, parse_combo
+    with pytest.raises(HotkeyError):
+        parse_combo(bad)
+
+
+def test_bad_hotkey_is_a_config_error():
+    with pytest.raises(cfgmod.ConfigError, match="unknown modifier 'ctlr'"):
+        cfgmod.parse({"pages": {"main": {"1": {"hotkey": "ctlr+c"}}}})
+
+
 def test_hotkey_argv(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: f"/usr/bin/{name}")
     assert hotkey_argv("Ctrl+Shift+M", wayland=False) == [
         "xdotool", "key", "--clearmodifiers", "ctrl+shift+m"]
     assert hotkey_argv("super+l", wayland=True) == ["wtype", "-M", "logo", "-k", "l", "-m", "logo"]
+    assert hotkey_argv("XF86AudioMute", wayland=False)[-1] == "XF86AudioMute"
+    assert hotkey_argv("ctrl+alt+f13", wayland=True) == [
+        "wtype", "-M", "ctrl", "-M", "alt", "-k", "F13", "-m", "alt", "-m", "ctrl"]
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert hotkey_argv("ctrl+c", wayland=False) is None

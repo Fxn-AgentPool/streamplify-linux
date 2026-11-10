@@ -96,8 +96,9 @@ def test_command_widget_runs_async():
 
 # --- controller integration ----------------------------------------------------
 
-def make(keys):
-    cfg = cfgmod.parse({"pages": {"main": keys, "other": {"1": {"label": "x"}}}})
+def make(keys, screensaver=False):
+    cfg = cfgmod.parse({"pages": {"main": keys, "other": {"1": {"label": "x"}}},
+                        "screensaver": screensaver})
     deck = FakeDeck()
     ctl = Controller(deck, cfg)
     ctl.start()

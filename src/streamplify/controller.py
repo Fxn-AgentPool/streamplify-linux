@@ -11,6 +11,7 @@ from . import actions
 from .config import Config, KeySpec
 from .device import KEY_COUNT, KeyEvent, encode_key_image
 from .render import BLANK, press_effect, render_key
+from .screensaver import render_clock_tiles
 from .widgets import Widget, create_widget
 
 log = logging.getLogger(__name__)
@@ -33,6 +34,11 @@ class Controller:
         self._sent: dict[int, bytes] = {}       # key -> last JPEG uploaded
         self._held: set[int] = set()
         self.widgets: dict[int, Widget] = {}    # live keys on the visible page
+        self.clock = time.monotonic             # injectable for tests
+        self.last_input = self.clock()
+        self.saver_active = False
+        self._saver_next = 0.0
+        self._swallow: set[int] = set()         # keys whose press woke the screensaver
 
     # --- state ---
     @property
@@ -45,6 +51,8 @@ class Controller:
     def start(self) -> None:
         """(Re)initialise the device, e.g. after connect."""
         self._sent.clear()
+        self.saver_active = False
+        self.last_input = self.clock()
         self.deck.wake()
         self.deck.brightness(self.brightness)
         self.deck.clear()
@@ -52,6 +60,9 @@ class Controller:
         self.redraw()
 
     def reload(self, config: Config) -> None:
+        if self.saver_active:
+            self.exit_saver()
+        self.last_input = self.clock()
         self.config = config
         self.page_stack = [p for p in self.page_stack if p in config.pages] or [config.start_page]
         if config.brightness != self.brightness:
@@ -75,8 +86,14 @@ class Controller:
                 self.widgets[key] = w
 
     def tick(self, now: float | None = None) -> int:
-        """Sample due widgets and upload the ones whose image changed."""
-        now = time.monotonic() if now is None else now
+        """Advance widgets / screensaver; upload keys whose image changed."""
+        now = self.clock() if now is None else now
+        saver = self.config.screensaver
+        if self.saver_active:
+            return self._saver_tick(now)
+        if saver.enabled and now - self.last_input >= saver.after:
+            self.enter_saver(now)
+            return len(self._sent)
         keys = []
         for key, w in self.widgets.items():
             if w.due(now):
@@ -87,10 +104,48 @@ class Controller:
         return self.redraw(keys) if keys else 0
 
     def seconds_until_tick(self, now: float | None = None) -> float:
-        now = time.monotonic() if now is None else now
-        if not self.widgets:
-            return float("inf")
-        return max(0.0, min(w.next_due for w in self.widgets.values()) - now)
+        now = self.clock() if now is None else now
+        if self.saver_active:
+            if self.config.screensaver.mode != "clock":
+                return float("inf")
+            return max(0.0, self._saver_next - now)
+        due = [w.next_due for w in self.widgets.values()]
+        if self.config.screensaver.enabled:
+            due.append(self.last_input + self.config.screensaver.after)
+        return max(0.0, min(due) - now) if due else float("inf")
+
+    # --- screensaver ---
+    def enter_saver(self, now: float | None = None) -> None:
+        cfg = self.config.screensaver
+        log.info("screensaver on (%s)", cfg.mode)
+        self.saver_active = True
+        self._held.clear()
+        self.stop()                              # pause live keys
+        if cfg.mode == "blank":
+            self.deck.brightness(0)
+            self.deck.clear()
+            self.deck.refresh()
+            self._sent.clear()                   # screen content is gone
+            return
+        self.deck.brightness(min(cfg.brightness, self.brightness))
+        if cfg.mode == "clock":
+            self._saver_next = 0.0
+            self._saver_tick(self.clock() if now is None else now)
+
+    def _saver_tick(self, now: float) -> int:
+        if self.config.screensaver.mode != "clock" or now < self._saver_next:
+            return 0
+        self._saver_next = now + 1.0
+        tiles = render_clock_tiles(self.config.screensaver)
+        return self.flush({k: encode_key_image(im) for k, im in tiles.items()})
+
+    def exit_saver(self) -> None:
+        log.info("screensaver off")
+        self.saver_active = False
+        self.last_input = self.clock()
+        self.deck.brightness(self.brightness)
+        self._build_widgets()
+        self.redraw()
 
     # --- drawing ---
     def render(self, key: int) -> Image.Image:
@@ -119,6 +174,15 @@ class Controller:
     # --- input ---
     def handle(self, ev: KeyEvent) -> None:
         log.debug("key %d %s", ev.key, "down" if ev.pressed else "up")
+        self.last_input = self.clock()
+        if self.saver_active:
+            if ev.pressed:
+                self._swallow.add(ev.key)        # waking up must not trigger the key
+                self.exit_saver()
+            return
+        if not ev.pressed and ev.key in self._swallow:
+            self._swallow.discard(ev.key)
+            return
         if ev.pressed:
             self._held.add(ev.key)
             self.redraw([ev.key])

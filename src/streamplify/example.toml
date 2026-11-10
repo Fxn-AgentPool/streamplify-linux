@@ -22,6 +22,16 @@
 
 brightness = 80
 start_page = "main"
+
+# Screensaver after a period without key presses. Any key wakes it up
+# (that press doesn't trigger the key). `screensaver = false` turns it off.
+[screensaver]
+after = 600          # seconds (default 10 min)
+mode = "clock"       # "clock" (big clock + date) | "dim" | "blank" (backlight off)
+brightness = 20      # while the screensaver runs
+# format = "%H:%M"
+# date_format = "%a %d %b"   # "" hides the date
+# color = "#c8d0e0"
 # font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 [pages.main.1]

@@ -152,6 +152,23 @@ If a `mic` or `nowplaying` key has its own action, that action runs instead of t
 Widgets only run while their page is visible, and a key is only re-sent
 to the deck when its picture actually changes.
 
+### Screensaver
+
+After 10 minutes without a key press the deck shows a large clock (one digit
+per key) and dims. Any key wakes it; that press doesn't trigger the key.
+
+```toml
+[screensaver]
+after = 600          # seconds; 0 or `screensaver = false` turns it off
+mode = "clock"       # "clock", "dim" (keep the page, darker) or "blank" (backlight off)
+brightness = 20
+format = "%H:%M"     # up to 5 characters get one key each; longer formats span the deck
+date_format = "%a %d %b"
+color = "#c8d0e0"
+```
+
+Live keys pause while the screensaver runs.
+
 ### Hotkeys
 
 `hotkey` presses a key combo, including keys your keyboard doesn't have:
@@ -183,7 +200,8 @@ See [`src/streamplify/example.toml`](src/streamplify/example.toml) for a full ex
 - [x] Live keys: clock, CPU/RAM/temperature, command output
 - [x] Built-in icons, mic mute toggle, now-playing album art
 - [ ] More live keys (Home Assistant, volume, …)
-- [ ] Long-press / double-tap, transitions, idle dimming, mini-games
+- [x] Screensaver (clock / dim / blank)
+- [ ] Long-press / double-tap, transitions, mini-games
 
 ## Protocol
 

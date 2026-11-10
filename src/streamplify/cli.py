@@ -20,8 +20,14 @@ POLL_MS = 200
 CONFIG_CHECK_S = 1.0
 
 
-class _Stop(Exception):
-    pass
+class _StopFlag:
+    """Set by SIGTERM/SIGINT. Checked between operations so a stop never
+    lands in the middle of an image upload (which would desync the deck)."""
+    def __init__(self):
+        self.set = False
+
+    def __call__(self, *_):
+        self.set = True
 
 
 def _mtime(path: Path | None) -> float | None:
@@ -37,17 +43,15 @@ def run(config_path: Path) -> int:
     cfg = cfgmod.load(config_path)
     mtime = _mtime(cfg.path)
 
-    def _stop(*_):
-        raise _Stop
-
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    stop = _StopFlag()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
 
     ctl: Controller | None = None
     deck = None
     waiting_logged = False
     try:
-        while True:
+        while not stop.set:
             if deck is None:
                 try:
                     deck = Deck()
@@ -72,8 +76,6 @@ def run(config_path: Path) -> int:
                 if ev is not None:
                     ctl.handle(ev)
                 ctl.tick()
-            except _Stop:
-                raise
             except Exception as e:
                 log.warning("deck lost (%s); reconnecting", e)
                 try:
@@ -94,7 +96,6 @@ def run(config_path: Path) -> int:
                         log.info("config reloaded")
                     except Exception as e:
                         log.error("config not reloaded: %s", e)
-    except _Stop:
         log.info("stopping")
     finally:
         if ctl is not None:

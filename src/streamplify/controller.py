@@ -118,6 +118,7 @@ class Controller:
 
     # --- input ---
     def handle(self, ev: KeyEvent) -> None:
+        log.debug("key %d %s", ev.key, "down" if ev.pressed else "up")
         if ev.pressed:
             self._held.add(ev.key)
             self.redraw([ev.key])

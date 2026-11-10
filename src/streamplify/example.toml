@@ -8,6 +8,12 @@
 #   run = "shell command"         url = "https://..."
 #   hotkey = "ctrl+shift+m"       page = "name"     back = true
 #   brightness = 60 | "+10" | "-10"
+#
+# Live keys: widget = "clock" | "cpu" | "ram" | "temp" | "command"
+#   interval = seconds        format = "%H:%M" (clock)
+#   style = "graph" | "bar" | "text" (meters)    color = "#3498db"
+#   command = "shell command" (command widget; shows its output)
+# A widget key can still have an action.
 
 brightness = 80
 start_page = "main"
@@ -32,6 +38,27 @@ url = "https://github.com"
 label = "Media"
 bg = "#8e44ad"
 page = "media"
+
+[pages.main.6]
+widget = "clock"
+format = "%H:%M"
+bg = "#1a1a2e"
+
+[pages.main.7]
+widget = "cpu"
+
+[pages.main.8]
+widget = "ram"
+style = "bar"
+
+[pages.main.9]
+widget = "temp"
+
+[pages.main.10]
+widget = "command"
+label = "Uptime"
+command = "uptime -p | sed 's/up //; s/ hours\\?/h/; s/ minutes\\?/m/'"
+interval = 60
 
 [pages.main.14]
 label = "Dim"

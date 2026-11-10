@@ -83,10 +83,13 @@ def render_key(spec: KeySpec, *, pressed: bool = False, font_path: Path | None =
             draw.text((KEY_SIZE / 2, y + line_h / 2), line, fill=spec.fg, font=f, anchor="mm")
             y += line_h
 
-    if pressed:
-        im = ImageEnhance.Brightness(im).enhance(0.55)
-        im = ImageOps.expand(im.resize((KEY_SIZE - 8, KEY_SIZE - 8), Image.LANCZOS), 4, fill="#000000")
-    return im
+    return press_effect(im) if pressed else im
+
+
+def press_effect(im: Image.Image) -> Image.Image:
+    """Darken and shrink a key image so it looks pushed in."""
+    im = ImageEnhance.Brightness(im).enhance(0.55)
+    return ImageOps.expand(im.resize((KEY_SIZE - 8, KEY_SIZE - 8), Image.LANCZOS), 4, fill="#000000")
 
 
 BLANK = KeySpec()

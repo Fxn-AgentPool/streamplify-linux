@@ -31,6 +31,10 @@ from .device import COLS, KEY_COUNT, key_at
 DEFAULT_PATH = Path("~/.config/streamplify/config.toml").expanduser()
 
 ACTION_FIELDS = ("run", "url", "hotkey", "page", "back", "brightness")
+STYLE_FIELDS = ("label", "icon", "bg", "fg", "font_size")
+WIDGETS = ("clock", "cpu", "ram", "temp", "command")
+WIDGET_OPTS = ("interval", "format", "style", "color", "command", "sensor")
+METER_STYLES = ("graph", "bar", "text")
 
 
 class ConfigError(ValueError):
@@ -51,6 +55,8 @@ class KeySpec:
     fg: str = "#ffffff"
     font_size: int | None = None
     action: Action | None = None
+    widget: str | None = None
+    widget_opts: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -85,9 +91,23 @@ def _parse_key(where: str, raw: dict, base: Path) -> KeySpec:
         v = action.value
         if not (isinstance(v, int) or (isinstance(v, str) and v[:1] in "+-" and v[1:].isdigit())):
             raise ConfigError(f"{where}: brightness must be 0-100 or '+N'/'-N'")
-    unknown = set(raw) - set(ACTION_FIELDS) - {"label", "icon", "bg", "fg", "font_size"}
+    unknown = set(raw) - set(ACTION_FIELDS) - set(STYLE_FIELDS) - set(WIDGET_OPTS) - {"widget"}
     if unknown:
         raise ConfigError(f"{where}: unknown field(s) {', '.join(sorted(unknown))}")
+    widget = raw.get("widget")
+    opts = {k: raw[k] for k in WIDGET_OPTS if k in raw}
+    if widget is None and opts:
+        raise ConfigError(f"{where}: {', '.join(sorted(opts))} only valid together with 'widget'")
+    if widget is not None:
+        if widget not in WIDGETS:
+            raise ConfigError(f"{where}: unknown widget '{widget}' (choose from {', '.join(WIDGETS)})")
+        if widget == "command" and not opts.get("command"):
+            raise ConfigError(f"{where}: command widget needs command = \"...\"")
+        if "style" in opts and opts["style"] not in METER_STYLES:
+            raise ConfigError(f"{where}: style must be one of {', '.join(METER_STYLES)}")
+        iv = opts.get("interval", 1)
+        if not (isinstance(iv, (int, float)) and iv >= 0.1):
+            raise ConfigError(f"{where}: interval must be a number of seconds >= 0.1")
     icon = raw.get("icon")
     if icon is not None:
         icon = Path(icon).expanduser()
@@ -100,6 +120,8 @@ def _parse_key(where: str, raw: dict, base: Path) -> KeySpec:
         fg=raw.get("fg", "#ffffff"),
         font_size=raw.get("font_size"),
         action=action,
+        widget=widget,
+        widget_opts=opts,
     )
 
 

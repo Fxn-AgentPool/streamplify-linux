@@ -367,6 +367,9 @@ class Command(AsyncWidget):
 
 # --- microphone -------------------------------------------------------------
 
+LIVE_GREEN = "#1e8449"
+
+
 class Mic(AsyncWidget):
     """Default microphone mute state; pressing toggles it.
 
@@ -426,8 +429,10 @@ class Mic(AsyncWidget):
             spec = KeySpec(icon=icons.Glyph("tabler", "microphone-off"), label=self.spec.label or "Muted",
                            bg=self.spec.widget_opts.get("color", "#c0392b"), fg="#ffffff")
         else:
+            # Green unless the user picked a background for this key.
+            bg = self.spec.bg if self.spec.bg.lower() not in ("#000", "#000000", "black") else LIVE_GREEN
             spec = KeySpec(icon=icons.Glyph("tabler", "microphone"), label=self.spec.label or "Live",
-                           bg=self.spec.bg, fg=self.spec.fg)
+                           bg=bg, fg=self.spec.fg)
         return render_key(spec)
 
 

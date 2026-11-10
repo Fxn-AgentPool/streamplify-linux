@@ -110,7 +110,7 @@ interval = 600
 | `ram` | Memory in use (%) | 1 s |
 | `temp` | CPU temperature; `sensor` picks a hwmon chip by name or a file path | 2 s |
 | `command` | First lines of a shell command's output (runs in the background) | 10 s |
-| `mic` | Default microphone, red when muted. **Press toggles mute.** Uses `wpctl` (PipeWire) or `pactl` (PulseAudio) | 1 s |
+| `mic` | Default microphone: green when live, red when muted (`bg` / `color` override). **Press toggles mute.** Uses `wpctl` (PipeWire) or `pactl` (PulseAudio) | 1 s |
 | `nowplaying` | Album art of the current track via `playerctl` (Spotify, browsers, mpv, VLC, …); dimmed with a pause icon when paused. **Press toggles play/pause.** `player = "spotify"` pins one player | 2 s |
 
 Options: `interval`, `format`, `style`, `color`, `command`, `sensor`, `player`.

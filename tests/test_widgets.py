@@ -339,3 +339,12 @@ def test_load_art_data_uri():
     uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
     im = widgets.load_art(uri)
     assert im is not None and im.getpixel((5, 5))[1] > 100
+
+
+def test_mic_live_is_green_by_default_but_respects_bg():
+    w = widgets.Mic(spec(widget="mic"), backend="wpctl")
+    w.muted = False
+    assert w.render().getpixel((2, 2)) == (30, 132, 73)
+    w2 = widgets.Mic(spec(widget="mic", bg="#123456"), backend="wpctl")
+    w2.muted = False
+    assert w2.render().getpixel((2, 2)) == (0x12, 0x34, 0x56)

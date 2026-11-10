@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streamplify-linux"
+version = "0.1.0"
+description = "Linux client for the Streamplify DECK"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = ["hid>=1.0.5", "pillow>=10"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

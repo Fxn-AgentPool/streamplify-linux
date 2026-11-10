@@ -27,7 +27,13 @@ streamplify init        # writes ~/.config/streamplify/config.toml
 streamplify check       # validate the config
 streamplify run         # run in the foreground
 streamplify selftest    # numbers every key, highlights presses
+streamplify reset       # USB-reset the deck if buttons stop responding
 ```
+
+On start the client USB-resets the deck (about a second), which clears a
+firmware state where the screen works but buttons don't (see
+[PROTOCOL.md](docs/PROTOCOL.md#pitfall-never-interrupt-an-image-upload)).
+`streamplify run --no-reset` skips that.
 
 Run at login as a systemd user service:
 

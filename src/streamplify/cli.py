@@ -116,7 +116,7 @@ def check(config_path: Path) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     missing = [str(s.icon) for p in cfg.pages.values() for s in p.keys.values()
-               if s.icon and not s.icon.exists()]
+               if isinstance(s.icon, Path) and not s.icon.exists()]
     for m in missing:
         print(f"warning: icon not found: {m}", file=sys.stderr)
     n = sum(len(p.keys) for p in cfg.pages.values())

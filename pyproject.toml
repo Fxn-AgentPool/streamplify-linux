@@ -18,7 +18,7 @@ dev = ["pytest>=8", "ruff>=0.6"]
 streamplify = "streamplify.cli:main"
 
 [tool.setuptools.package-data]
-streamplify = ["example.toml"]
+streamplify = ["example.toml", "icons/*"]
 
 [tool.ruff]
 line-length = 110

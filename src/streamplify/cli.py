@@ -67,9 +67,11 @@ def run(config_path: Path) -> int:
                 last_check = time.monotonic()
 
             try:
-                ev = deck.read_event(POLL_MS)
+                wait = min(POLL_MS, int(ctl.seconds_until_tick() * 1000) + 1)
+                ev = deck.read_event(max(1, wait))
                 if ev is not None:
                     ctl.handle(ev)
+                ctl.tick()
             except _Stop:
                 raise
             except Exception as e:
@@ -95,6 +97,8 @@ def run(config_path: Path) -> int:
     except _Stop:
         log.info("stopping")
     finally:
+        if ctl is not None:
+            ctl.stop()
         if deck is not None:
             try:
                 deck.clear()

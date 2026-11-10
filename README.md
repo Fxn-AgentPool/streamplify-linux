@@ -5,8 +5,8 @@ There is no official Linux software, so this project reverse-engineers the
 protocol and builds a client from scratch.
 
 **Status:** early but usable. Per-key labels, icons and actions, pages,
-press feedback, config hot-reload and automatic reconnect work. GIFs and
-multi-key canvas are next.
+live keys (clock, CPU/RAM/temperature meters, command output), press
+feedback, config hot-reload and automatic reconnect work.
 
 ## Install
 
@@ -68,6 +68,38 @@ back = true
 | `page = "name"` / `back = true` | Switch page / go back |
 | `brightness = 60` or `"+10"` | Set or change brightness |
 
+### Live keys
+
+A key can show live data with `widget`. It can still have an action too.
+
+```toml
+[pages.main.6]
+widget = "clock"
+format = "%H:%M"          # any strftime format, "\n" for a second line
+
+[pages.main.7]
+widget = "cpu"            # also "ram" and "temp"
+style = "graph"           # "graph", "bar" or "text"
+
+[pages.main.10]
+widget = "command"
+label = "Weather"
+command = "curl -s 'wttr.in/?format=%t'"
+interval = 600
+```
+
+| Widget | Shows | Default interval |
+|---|---|---|
+| `clock` | Time/date via `format` | 1 s |
+| `cpu` | CPU load (%) | 1 s |
+| `ram` | Memory in use (%) | 1 s |
+| `temp` | CPU temperature; `sensor` picks a hwmon chip by name or a file path | 2 s |
+| `command` | First lines of a shell command's output (runs in the background) | 10 s |
+
+Options: `interval`, `format`, `style`, `color`, `command`, `sensor`.
+Widgets only run while their page is visible, and a key is only re-sent
+to the deck when its picture actually changes.
+
 See [`src/streamplify/example.toml`](src/streamplify/example.toml) for a full example.
 
 ## Roadmap
@@ -75,7 +107,8 @@ See [`src/streamplify/example.toml`](src/streamplify/example.toml) for a full ex
 - [x] Driver, pages, actions, config hot-reload, reconnect
 - [ ] Animated GIF keys
 - [ ] Canvas mode: images and widgets spanning several keys
-- [ ] Live keys (system stats, mic mute, Home Assistant, …)
+- [x] Live keys: clock, CPU/RAM/temperature, command output
+- [ ] More live keys (mic mute, now playing, Home Assistant, …)
 - [ ] Long-press / double-tap, transitions, idle dimming, mini-games
 
 ## Protocol

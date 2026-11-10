@@ -78,5 +78,6 @@ but the IN endpoint floods oversized packets, the kernel logs
 
 - The client avoids this by handling SIGTERM/SIGINT with a flag that is only
   checked between operations, so a stop always finishes the current upload.
-- To recover a deck in this state: stop every program using it, then
-  `sudo usbreset 0100:1000` (or replug it).
+- The client USB-resets the deck whenever it starts (and after losing it), so a
+  deck left in this state by a crash, `kill -9` or power loss heals itself.
+  Manual recovery: `streamplify reset`, `sudo usbreset 0100:1000`, or replug.

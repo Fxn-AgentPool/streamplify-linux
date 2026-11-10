@@ -37,8 +37,9 @@ def _mtime(path: Path | None) -> float | None:
         return None
 
 
-def run(config_path: Path) -> int:
+def run(config_path: Path, *, usb_reset: bool = True) -> int:
     from .device import Deck  # imported late so `check` works without hidapi
+    from .usbreset import reset_all
 
     cfg = cfgmod.load(config_path)
     mtime = _mtime(cfg.path)
@@ -50,9 +51,15 @@ def run(config_path: Path) -> int:
     ctl: Controller | None = None
     deck = None
     waiting_logged = False
+    # A previous run may have died mid-upload (crash, kill -9, power loss),
+    # leaving the deck unable to send button presses. A USB reset fixes that.
+    needs_reset = usb_reset
     try:
         while not stop.set:
             if deck is None:
+                if needs_reset:
+                    reset_all()
+                    needs_reset = False
                 try:
                     deck = Deck()
                 except Exception as e:      # hid raises HIDException / OSError variants
@@ -83,6 +90,7 @@ def run(config_path: Path) -> int:
                 except Exception:
                     pass
                 deck = None
+                needs_reset = usb_reset
                 continue
 
             if time.monotonic() - last_check >= CONFIG_CHECK_S:
@@ -142,7 +150,9 @@ def main(argv=None) -> int:
     ap.add_argument("-c", "--config", type=Path, default=cfgmod.DEFAULT_PATH)
     ap.add_argument("-v", "--verbose", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("run", help="run the service (default)")
+    run_p = sub.add_parser("run", help="run the service (default)")
+    run_p.add_argument("--no-reset", action="store_true", help="don't USB-reset the deck on start")
+    sub.add_parser("reset", help="USB-reset the deck (fixes buttons not responding)")
     sub.add_parser("check", help="validate the config file")
     sub.add_parser("init", help="write an example config")
     st = sub.add_parser("selftest", help="number every key and highlight presses")
@@ -157,12 +167,17 @@ def main(argv=None) -> int:
         return check(args.config)
     if cmd == "init":
         return init(args.config)
+    if cmd == "reset":
+        from .usbreset import reset_all
+        n = reset_all()
+        print(f"reset {n} deck(s)" if n else "no deck reset (not found or no permission, see log)")
+        return 0 if n else 1
     if cmd == "selftest":
         from . import selftest
         sys.argv = ["selftest", args.seconds]
         selftest.main()
         return 0
-    return run(args.config)
+    return run(args.config, usb_reset=not getattr(args, "no_reset", False))
 
 
 if __name__ == "__main__":

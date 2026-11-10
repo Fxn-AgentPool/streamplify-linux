@@ -150,6 +150,7 @@ def main(argv=None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("PIL").setLevel(logging.INFO)
     cmd = args.cmd or "run"
     if cmd == "check":
         return check(args.config)

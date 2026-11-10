@@ -156,3 +156,186 @@ def test_failing_action_does_not_raise(monkeypatch):
         raise OSError("nope")
     monkeypatch.setattr("streamplify.actions.run_command", boom)
     ctl.handle(KeyEvent(cfgmod.slot_to_key(1), True))       # must not propagate
+
+
+# --- icons --------------------------------------------------------------------
+
+def test_glyph_icon_config_and_suggestions():
+    from streamplify import icons
+    s = spec(icon="tabler:microphone", label="Mic")
+    assert s.icon == icons.Glyph("tabler", "microphone")
+    with pytest.raises(cfgmod.ConfigError, match="did you mean tabler:microphone"):
+        spec(icon="tabler:microfone")
+    with pytest.raises(cfgmod.ConfigError, match="only exists as outline"):
+        spec(icon="tabler-filled:terminal-2")
+    with pytest.raises(cfgmod.ConfigError, match="unknown icon set"):
+        spec(icon="fa:home")
+
+
+def test_glyph_renders_in_colour():
+    from streamplify import icons
+    im = icons.render_glyph(icons.Glyph("tabler-filled", "player-play"), 40, "#ff0000")
+    assert max(im.size) == 40
+    assert im.getpixel((im.width // 3, im.height // 2)) == (255, 0, 0, 255)   # inside the triangle
+
+
+def test_file_icon_paths_still_work(tmp_path):
+    s = cfgmod.parse({"pages": {"main": {"1": {"icon": "img.png"}}}}, base=tmp_path).pages["main"].keys[11]
+    assert s.icon == tmp_path / "img.png"
+
+
+# --- mic ------------------------------------------------------------------------
+
+class FakeRun:
+    """Stands in for widgets._cmd: answers by argv[:2], records calls."""
+    def __init__(self, answers):
+        self.answers, self.calls = answers, []
+
+    def __call__(self, argv, timeout=2.0):
+        import subprocess
+        self.calls.append(argv)
+        out = self.answers.get(tuple(argv[:2]))
+        if callable(out):
+            out = out()
+        return None if out is None else subprocess.CompletedProcess(argv, 0, out, "")
+
+
+def run_sync(w):
+    """Run one async fetch and wait for it."""
+    w.changed.clear()
+    w.sample()
+    assert w.wait(5)
+
+
+@pytest.mark.parametrize("backend, out, muted", [
+    ("wpctl", "Volume: 0.80\n", False),
+    ("wpctl", "Volume: 0.80 [MUTED]\n", True),
+    ("pactl", "Mute: yes\n", True),
+    ("pactl", "Mute: no\n", False),
+])
+def test_mic_state(monkeypatch, backend, out, muted):
+    fake = FakeRun({("wpctl", "get-volume"): out, ("pactl", "get-source-mute"): out})
+    monkeypatch.setattr(widgets, "_cmd", fake)
+    w = widgets.Mic(spec(widget="mic"), backend=backend)
+    run_sync(w)
+    assert w.muted is muted
+    assert w.render().size == (100, 100)
+
+
+def test_mic_toggle(monkeypatch):
+    state = {"muted": False}
+    def get():
+        return "Volume: 1.00 [MUTED]\n" if state["muted"] else "Volume: 1.00\n"
+    def toggle():
+        state["muted"] = not state["muted"]
+        return ""
+    fake = FakeRun({("wpctl", "get-volume"): get, ("wpctl", "set-mute"): toggle})
+    monkeypatch.setattr(widgets, "_cmd", fake)
+    w = widgets.Mic(spec(widget="mic"), backend="wpctl")
+    run_sync(w)
+    assert w.muted is False
+    w.changed.clear()
+    w.press()
+    assert w.muted is True                       # optimistic, before the worker finishes
+    assert w.wait(5)
+    assert w.muted is True and state["muted"] is True
+    assert ["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"] in fake.calls
+
+
+def test_mic_without_audio_server(monkeypatch):
+    monkeypatch.setattr(widgets, "_cmd", FakeRun({}))
+    w = widgets.Mic(spec(widget="mic"), backend="wpctl")
+    run_sync(w)
+    assert w.muted is None
+    w.press()                                    # no-op, must not raise
+    assert w.render().size == (100, 100)
+
+
+# --- now playing -------------------------------------------------------------------
+
+def test_nowplaying_with_file_art(monkeypatch, tmp_path):
+    from PIL import Image
+    cover = tmp_path / "cover art.jpg"
+    Image.new("RGB", (300, 300), "#ff0000").save(cover)
+    meta = widgets.SEP.join(["Playing", cover.as_uri(), "Song", "Artist"]) + "\n"
+    fake = FakeRun({("playerctl", "metadata"): meta})
+    monkeypatch.setattr(widgets, "_cmd", fake)
+    w = widgets.NowPlaying(spec(widget="nowplaying"))
+    w.available = True
+    run_sync(w)
+    assert w.track.title == "Song" and w.art is not None
+    playing = w.render()
+    assert playing.getpixel((50, 50))[0] > 200   # red cover, full brightness
+
+    w.track = widgets.Track("Paused", cover.as_uri(), "Song", "Artist")
+    paused = w.render()
+    assert paused.getpixel((5, 5))[0] < 120      # dimmed
+
+
+def test_nowplaying_art_is_cached_per_url(monkeypatch, tmp_path):
+    from PIL import Image
+    cover = tmp_path / "c.png"
+    Image.new("RGB", (50, 50), "blue").save(cover)
+    meta = widgets.SEP.join(["Playing", cover.as_uri(), "A", "B"])
+    monkeypatch.setattr(widgets, "_cmd", FakeRun({("playerctl", "metadata"): meta}))
+    loads = []
+    real = widgets.load_art
+    monkeypatch.setattr(widgets, "load_art", lambda u: loads.append(u) or real(u))
+    w = widgets.NowPlaying(spec(widget="nowplaying"))
+    w.available = True
+    run_sync(w)
+    run_sync(w)
+    assert len(loads) == 1
+
+
+def test_nowplaying_no_player(monkeypatch):
+    monkeypatch.setattr(widgets, "_cmd", FakeRun({}))
+    w = widgets.NowPlaying(spec(widget="nowplaying"))
+    w.available = True
+    run_sync(w)
+    assert w.track is None
+    assert w.render().size == (100, 100)
+
+
+def test_nowplaying_press_runs_play_pause(monkeypatch):
+    fake = FakeRun({("playerctl", "-p"): ""})
+    monkeypatch.setattr(widgets, "_cmd", fake)
+    w = widgets.NowPlaying(spec(widget="nowplaying", player="spotify"))
+    w.available = True
+    w.changed.clear()
+    w.press()
+    assert w.wait(5)
+    assert ["playerctl", "-p", "spotify", "play-pause"] in fake.calls
+
+
+def test_load_art_rejects_unknown_schemes_and_huge_files(tmp_path, monkeypatch):
+    assert widgets.load_art("ftp://x/y.jpg") is None
+    assert widgets.load_art("") is None
+    big = tmp_path / "big.bin"
+    big.write_bytes(b"\0" * 64)
+    monkeypatch.setattr(widgets, "ART_MAX_BYTES", 32)
+    assert widgets.load_art(big.as_uri()) is None
+
+
+def test_widget_press_used_when_no_action(monkeypatch):
+    monkeypatch.setattr(widgets, "_cmd", FakeRun({("wpctl", "get-volume"): "Volume: 1.00\n"}))
+    monkeypatch.setattr(widgets.shutil, "which", lambda n: "/usr/bin/" + n)
+    _deck, ctl = make({"1": {"widget": "mic"}})
+    w = ctl.widgets[cfgmod.slot_to_key(1)]
+    assert w.wait(5)
+    pressed = []
+    monkeypatch.setattr(w, "press", lambda: pressed.append(1) or True)
+    ctl.handle(KeyEvent(cfgmod.slot_to_key(1), True))
+    assert pressed == [1]
+
+
+def test_load_art_data_uri():
+    import base64
+    import io as _io
+
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (20, 20), "green").save(buf, "PNG")
+    uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode()
+    im = widgets.load_art(uri)
+    assert im is not None and im.getpixel((5, 5))[1] > 100

@@ -121,7 +121,14 @@ class Controller:
         if ev.pressed:
             self._held.add(ev.key)
             self.redraw([ev.key])
-            self.trigger(self.spec(ev.key))
+            spec, w = self.spec(ev.key), self.widgets.get(ev.key)
+            if spec.action is None and w is not None:
+                try:
+                    w.press()
+                except Exception:
+                    log.exception("widget press failed")
+            else:
+                self.trigger(spec)
         else:
             self._held.discard(ev.key)
             self.redraw([ev.key])

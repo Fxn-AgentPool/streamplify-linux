@@ -5,23 +5,30 @@ controller only uploads a key when the rendered image actually changed, so
 a minute clock ticking every second costs one USB upload per minute.
 
 Config (per key):
-    widget   = "clock" | "cpu" | "ram" | "temp" | "command"
+    widget   = "clock" | "cpu" | "ram" | "temp" | "command" | "mic" | "nowplaying"
     interval = seconds between samples (default per widget)
     format   = strftime format for clock (default "%H:%M")
     style    = "graph" | "bar" | "text" for meters (default "graph")
     color    = accent colour for meters
     command  = shell command for the command widget (first lines of output shown)
+    player   = MPRIS player name for nowplaying (default: whichever playerctl picks)
 """
 from __future__ import annotations
 
+import base64
+import io
 import logging
+import shutil
 import subprocess
 import threading
 import time
+import urllib.parse
+import urllib.request
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageEnhance, ImageOps
 
 from .config import KeySpec
 from .device import KEY_SIZE
@@ -59,6 +66,10 @@ class Widget:
 
     def poll_changed(self) -> bool:
         """True if the widget changed outside its tick (e.g. async result)."""
+        return False
+
+    def press(self) -> bool:
+        """Built-in press behaviour for keys without an action. True = handled."""
         return False
 
     def close(self) -> None:
@@ -261,37 +272,48 @@ def find_temp_sensor(sensor: str | None = None, root: Path = Path("/sys/class"))
 
 # --- command ---------------------------------------------------------------
 
-class Command(Widget):
-    """Shows the output of a shell command. Runs in a thread so slow
-    commands never block button handling."""
-    default_interval = 10.0
+class AsyncWidget(Widget):
+    """Widget whose data comes from a slow source (subprocess, network).
+
+    ``fetch()`` runs in a background thread; the result is stored with
+    ``apply()`` and the controller is told via ``poll_changed()``. At most
+    one fetch runs at a time, so a hung source never piles up threads.
+    """
 
     def __init__(self, spec):
         super().__init__(spec)
-        self.cmd = spec.widget_opts.get("command", "")
-        self.output = "…"
         self._lock = threading.Lock()
         self._running = False
         self.changed = threading.Event()
 
-    def sample(self):
-        with self._lock:
-            if self._running or not self.cmd:
-                return
-            self._running = True
-        threading.Thread(target=self._run, daemon=True).start()
+    def fetch(self):
+        raise NotImplementedError
 
-    def _run(self):
-        try:
-            r = subprocess.run(["/bin/sh", "-c", self.cmd], capture_output=True, text=True,
-                               timeout=max(5.0, self.interval))
-            out = (r.stdout or r.stderr).strip() or "(empty)"
-        except subprocess.TimeoutExpired:
-            out = "timeout"
-        except OSError as e:
-            out = f"error: {e.strerror}"
+    def apply(self, result) -> None:
+        raise NotImplementedError
+
+    def sample(self):
+        self._start()
+
+    def _start(self, before=None) -> bool:
+        """Run ``before()`` (optional) then ``fetch()`` in a worker thread."""
         with self._lock:
-            self.output = "\n".join(out.splitlines()[:4])
+            if self._running:
+                return False
+            self._running = True
+        threading.Thread(target=self._run, args=(before,), daemon=True).start()
+        return True
+
+    def _run(self, before=None):
+        try:
+            if before is not None:
+                before()
+            result = self.fetch()
+        except Exception:
+            log.exception("%s fetch failed", type(self).__name__)
+            result = None
+        with self._lock:
+            self.apply(result)
             self._running = False
         self.changed.set()
 
@@ -301,11 +323,225 @@ class Command(Widget):
             return True
         return False
 
+    def wait(self, timeout: float = 5.0) -> bool:
+        """Block until the next result arrives (tests, startup)."""
+        ok = self.changed.wait(timeout)
+        return ok
+
+
+def _cmd(argv: list[str], timeout: float = 2.0) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+class Command(AsyncWidget):
+    """Shows the output of a shell command."""
+    default_interval = 10.0
+
+    def __init__(self, spec):
+        super().__init__(spec)
+        self.cmd = spec.widget_opts.get("command", "")
+        self.output = "…"
+
+    def fetch(self):
+        try:
+            r = subprocess.run(["/bin/sh", "-c", self.cmd], capture_output=True, text=True,
+                               timeout=max(5.0, self.interval))
+            return (r.stdout or r.stderr).strip() or "(empty)"
+        except subprocess.TimeoutExpired:
+            return "timeout"
+        except OSError as e:
+            return f"error: {e.strerror}"
+
+    def apply(self, result):
+        self.output = "\n".join((result or "error").splitlines()[:4])
+
     def render(self):
         from .render import render_key
         label = self.output if not self.spec.label else f"{self.spec.label}\n{self.output}"
         return render_key(KeySpec(label=label, bg=self.spec.bg, fg=self.spec.fg,
                                   font_size=self.spec.font_size))
+
+
+# --- microphone -------------------------------------------------------------
+
+LIVE_GREEN = "#1e8449"
+
+
+class Mic(AsyncWidget):
+    """Default microphone mute state; pressing toggles it.
+
+    Uses PipeWire's ``wpctl`` when present, otherwise PulseAudio's ``pactl``.
+    """
+    default_interval = 1.0
+
+    def __init__(self, spec, backend: str | None = None):
+        super().__init__(spec)
+        if backend is None:
+            backend = next((b for b in ("wpctl", "pactl") if shutil.which(b)), None)
+        self.backend = backend
+        self.muted: bool | None = None          # None = no mic / no audio server
+
+    def fetch(self):
+        if self.backend == "wpctl":
+            r = _cmd(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])
+            if r is None or r.returncode != 0 or "Volume:" not in r.stdout:
+                return None
+            return "[MUTED]" in r.stdout
+        if self.backend == "pactl":
+            r = _cmd(["pactl", "get-source-mute", "@DEFAULT_SOURCE@"])
+            if r is None or r.returncode != 0 or "Mute:" not in r.stdout:
+                return None
+            return r.stdout.split(":", 1)[1].strip().lower() == "yes"
+        return None
+
+    def apply(self, result):
+        self.muted = result
+
+    def toggle_argv(self) -> list[str] | None:
+        if self.backend == "wpctl":
+            return ["wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "toggle"]
+        if self.backend == "pactl":
+            return ["pactl", "set-source-mute", "@DEFAULT_SOURCE@", "toggle"]
+        return None
+
+    def press(self) -> bool:
+        argv = self.toggle_argv()
+        if argv is None or self.muted is None:
+            return True
+        # Flip first so the worker's real reading always lands last.
+        self.muted = not self.muted
+        if not self._start(before=lambda: _cmd(argv)):
+            # A fetch is already in flight: still toggle, re-read on the next tick.
+            threading.Thread(target=_cmd, args=(argv,), daemon=True).start()
+            self.next_due = 0.0
+        return True
+
+    def render(self):
+        from . import icons
+        from .render import render_key
+        if self.muted is None:
+            spec = KeySpec(icon=icons.Glyph("tabler", "microphone-off"), label=self.spec.label or "No mic",
+                           bg="#222222", fg="#888888")
+        elif self.muted:
+            spec = KeySpec(icon=icons.Glyph("tabler", "microphone-off"), label=self.spec.label or "Muted",
+                           bg=self.spec.widget_opts.get("color", "#c0392b"), fg="#ffffff")
+        else:
+            # Green unless the user picked a background for this key.
+            bg = self.spec.bg if self.spec.bg.lower() not in ("#000", "#000000", "black") else LIVE_GREEN
+            spec = KeySpec(icon=icons.Glyph("tabler", "microphone"), label=self.spec.label or "Live",
+                           bg=bg, fg=self.spec.fg)
+        return render_key(spec)
+
+
+# --- now playing -------------------------------------------------------------
+
+ART_MAX_BYTES = 5 * 1024 * 1024
+SEP = "\x1f"
+
+
+@dataclass
+class Track:
+    status: str          # Playing | Paused | Stopped
+    art_url: str
+    title: str
+    artist: str
+
+
+class NowPlaying(AsyncWidget):
+    """Album art of the current MPRIS player (via playerctl). Press = play/pause."""
+    default_interval = 2.0
+
+    def __init__(self, spec):
+        super().__init__(spec)
+        self.player = spec.widget_opts.get("player")
+        self.track: Track | None = None
+        self.art: Image.Image | None = None
+        self._art_url: str | None = None
+        self.available = shutil.which("playerctl") is not None
+
+    def _pc(self, *args) -> list[str]:
+        return ["playerctl", *(["-p", self.player] if self.player else []), *args]
+
+    def fetch(self):
+        if not self.available:
+            return None
+        fmt = SEP.join(["{{status}}", "{{mpris:artUrl}}", "{{xesam:title}}", "{{xesam:artist}}"])
+        r = _cmd(self._pc("metadata", "--format", fmt))
+        if r is None or r.returncode != 0 or not r.stdout.strip():
+            return None
+        parts = (r.stdout.rstrip("\n").split(SEP) + [""] * 4)[:4]
+        track = Track(*parts)
+        art = self.art if track.art_url == self._art_url else load_art(track.art_url)
+        return track, art
+
+    def apply(self, result):
+        if result is None:
+            self.track, self.art, self._art_url = None, None, None
+        else:
+            self.track, self.art = result
+            self._art_url = self.track.art_url
+
+    def press(self) -> bool:
+        if self.available:
+            argv = self._pc("play-pause")
+            if not self._start(before=lambda: _cmd(argv)):
+                threading.Thread(target=_cmd, args=(argv,), daemon=True).start()
+                self.next_due = 0.0
+        return True
+
+    def render(self):
+        from . import icons
+        from .render import render_key
+        t = self.track
+        if t is None:
+            label = self.spec.label or ("No player" if self.available else "playerctl?")
+            return render_key(KeySpec(icon=icons.Glyph("tabler", "music-off"), label=label,
+                                      bg="#222222", fg="#888888"))
+        playing = t.status == "Playing"
+        if self.art is None:
+            text = "\n".join(x for x in (t.title, t.artist) if x) or t.status
+            im = render_key(KeySpec(label=text, bg=self.spec.bg, fg=self.spec.fg, font_size=13))
+        else:
+            im = ImageOps.fit(self.art, (W, W), Image.LANCZOS)
+        if not playing:
+            im = ImageEnhance.Brightness(im).enhance(0.4)
+            glyph = icons.render_glyph(icons.Glyph("tabler-filled", "player-pause"), 44, "#ffffff")
+            im.paste(glyph, ((W - glyph.width) // 2, (W - glyph.height) // 2), glyph)
+        return im
+
+
+def load_art(url: str) -> Image.Image | None:
+    """Album art from a file:// or http(s):// URL, or None."""
+    if not url:
+        return None
+    try:
+        if url.startswith("file://"):
+            path = Path(urllib.parse.unquote(urllib.parse.urlparse(url).path))
+            data = path.read_bytes()[:ART_MAX_BYTES + 1]
+        elif url.startswith("data:image/") and ";base64," in url[:64]:
+            encoded = url.split(",", 1)[1]
+            if len(encoded) > ART_MAX_BYTES * 4 // 3 + 4:
+                return None
+            data = base64.b64decode(encoded)
+        elif url.startswith(("http://", "https://")):
+            req = urllib.request.Request(url, headers={"User-Agent": "streamplify-linux"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = resp.read(ART_MAX_BYTES + 1)
+        else:
+            return None
+        if len(data) > ART_MAX_BYTES:
+            return None
+        im = Image.open(io.BytesIO(data))
+        im.draft("RGB", (W * 2, W * 2))     # fast JPEG downscale on decode
+        im = im.convert("RGB")
+        im.thumbnail((W * 2, W * 2))
+        return im
+    except Exception:
+        log.warning("could not load album art %s", url, exc_info=True)
+        return None
 
 
 REGISTRY: dict[str, type[Widget]] = {
@@ -314,6 +550,8 @@ REGISTRY: dict[str, type[Widget]] = {
     "ram": Ram,
     "temp": Temp,
     "command": Command,
+    "mic": Mic,
+    "nowplaying": NowPlaying,
 }
 
 

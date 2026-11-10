@@ -4,37 +4,49 @@
 #    6  7  8  9 10
 #   11 12 13 14 15
 #
-# Per key: label, icon (png/jpg/gif path), bg, fg, font_size, and ONE action:
+# Per key: label, icon, icon_color, bg, fg, font_size, and ONE action:
 #   run = "shell command"         url = "https://..."
 #   hotkey = "ctrl+shift+m"       page = "name"     back = true
 #   brightness = 60 | "+10" | "-10"
 #
-# Live keys: widget = "clock" | "cpu" | "ram" | "temp" | "command"
+# icon = "tabler:<name>" or "tabler-filled:<name>" (https://tabler.io/icons),
+#        or a path to a png/jpg file.
+#
+# Live keys: widget = "clock" | "cpu" | "ram" | "temp" | "command" | "mic" | "nowplaying"
 #   interval = seconds        format = "%H:%M" (clock)
 #   style = "graph" | "bar" | "text" (meters)    color = "#3498db"
 #   command = "shell command" (command widget; shows its output)
-# A widget key can still have an action.
+#   player = "spotify" (nowplaying; default: the active player)
+# mic and nowplaying toggle mute / play-pause when pressed, unless the key has
+# its own action. Other widget keys can have an action too.
 
 brightness = 80
 start_page = "main"
 # font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 [pages.main.1]
+icon = "tabler:terminal-2"
 label = "Terminal"
 bg = "#2c3e50"
 run = "x-terminal-emulator"
 
 [pages.main.2]
+icon = "tabler:folder"
 label = "Files"
 bg = "#2980b9"
 run = "xdg-open ~"
 
 [pages.main.3]
+icon = "tabler:brand-github"
 label = "GitHub"
 bg = "#24292f"
 url = "https://github.com"
 
+[pages.main.4]
+widget = "mic"
+
 [pages.main.5]
+icon = "tabler:music"
 label = "Media"
 bg = "#8e44ad"
 page = "media"
@@ -60,30 +72,44 @@ label = "Uptime"
 command = "uptime -p | sed 's/up //; s/ hours\\?/h/; s/ minutes\\?/m/'"
 interval = 60
 
+[pages.main.11]
+widget = "nowplaying"
+
 [pages.main.14]
+icon = "tabler:sun-low"
 label = "Dim"
 bg = "#34495e"
 brightness = "-20"
 
 [pages.main.15]
+icon = "tabler:sun-high"
 label = "Bright"
 bg = "#f39c12"
 brightness = "+20"
 
 [pages.media.1]
-label = "Prev"
+icon = "tabler-filled:player-skip-back"
 run = "playerctl previous"
 
 [pages.media.2]
-label = "Play / Pause"
-bg = "#27ae60"
-run = "playerctl play-pause"
+widget = "nowplaying"
 
 [pages.media.3]
-label = "Next"
+icon = "tabler-filled:player-skip-forward"
 run = "playerctl next"
 
+[pages.media.4]
+icon = "tabler:volume-2"
+label = "Vol -"
+run = "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+
+[pages.media.5]
+icon = "tabler:volume"
+label = "Vol +"
+run = "wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"
+
 [pages.media.11]
+icon = "tabler:arrow-back-up"
 label = "Back"
 bg = "#c0392b"
 back = true

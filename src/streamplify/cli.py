@@ -20,8 +20,14 @@ POLL_MS = 200
 CONFIG_CHECK_S = 1.0
 
 
-class _Stop(Exception):
-    pass
+class _StopFlag:
+    """Set by SIGTERM/SIGINT. Checked between operations so a stop never
+    lands in the middle of an image upload (which would desync the deck)."""
+    def __init__(self):
+        self.set = False
+
+    def __call__(self, *_):
+        self.set = True
 
 
 def _mtime(path: Path | None) -> float | None:
@@ -37,17 +43,15 @@ def run(config_path: Path) -> int:
     cfg = cfgmod.load(config_path)
     mtime = _mtime(cfg.path)
 
-    def _stop(*_):
-        raise _Stop
-
-    signal.signal(signal.SIGTERM, _stop)
-    signal.signal(signal.SIGINT, _stop)
+    stop = _StopFlag()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
 
     ctl: Controller | None = None
     deck = None
     waiting_logged = False
     try:
-        while True:
+        while not stop.set:
             if deck is None:
                 try:
                     deck = Deck()
@@ -72,8 +76,6 @@ def run(config_path: Path) -> int:
                 if ev is not None:
                     ctl.handle(ev)
                 ctl.tick()
-            except _Stop:
-                raise
             except Exception as e:
                 log.warning("deck lost (%s); reconnecting", e)
                 try:
@@ -94,7 +96,6 @@ def run(config_path: Path) -> int:
                         log.info("config reloaded")
                     except Exception as e:
                         log.error("config not reloaded: %s", e)
-    except _Stop:
         log.info("stopping")
     finally:
         if ctl is not None:
@@ -116,7 +117,7 @@ def check(config_path: Path) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     missing = [str(s.icon) for p in cfg.pages.values() for s in p.keys.values()
-               if s.icon and not s.icon.exists()]
+               if isinstance(s.icon, Path) and not s.icon.exists()]
     for m in missing:
         print(f"warning: icon not found: {m}", file=sys.stderr)
     n = sum(len(p.keys) for p in cfg.pages.values())
@@ -150,6 +151,7 @@ def main(argv=None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(levelname)s %(name)s: %(message)s")
+    logging.getLogger("PIL").setLevel(logging.INFO)
     cmd = args.cmd or "run"
     if cmd == "check":
         return check(args.config)

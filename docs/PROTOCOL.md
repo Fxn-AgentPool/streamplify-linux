@@ -66,3 +66,17 @@ uses image indices.
 
 So the budget is roughly 45 key images per second. Batch uploads and send one
 `STP` per frame.
+
+## Pitfall: never interrupt an image upload
+
+If the host stops partway through a `BAT` upload (process killed, exception),
+the deck keeps waiting for the rest of the JPEG and treats the next commands as
+image data. Its firmware then gets confused: the screen still accepts images,
+but the IN endpoint floods oversized packets, the kernel logs
+`usb 1-1: input irq status -75` (EOVERFLOW) hundreds of times per second, and
+**no button presses arrive**.
+
+- The client avoids this by handling SIGTERM/SIGINT with a flag that is only
+  checked between operations, so a stop always finishes the current upload.
+- To recover a deck in this state: stop every program using it, then
+  `sudo usbreset 0100:1000` (or replug it).

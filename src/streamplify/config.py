@@ -26,14 +26,15 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import icons
 from .device import COLS, KEY_COUNT, key_at
 
 DEFAULT_PATH = Path("~/.config/streamplify/config.toml").expanduser()
 
 ACTION_FIELDS = ("run", "url", "hotkey", "page", "back", "brightness")
-STYLE_FIELDS = ("label", "icon", "bg", "fg", "font_size")
-WIDGETS = ("clock", "cpu", "ram", "temp", "command")
-WIDGET_OPTS = ("interval", "format", "style", "color", "command", "sensor")
+STYLE_FIELDS = ("label", "icon", "icon_color", "bg", "fg", "font_size")
+WIDGETS = ("clock", "cpu", "ram", "temp", "command", "mic", "nowplaying")
+WIDGET_OPTS = ("interval", "format", "style", "color", "command", "sensor", "player")
 METER_STYLES = ("graph", "bar", "text")
 
 
@@ -50,7 +51,8 @@ class Action:
 @dataclass(frozen=True)
 class KeySpec:
     label: str = ""
-    icon: Path | None = None
+    icon: Path | icons.Glyph | None = None
+    icon_color: str | None = None       # glyph icons only; defaults to fg
     bg: str = "#000000"
     fg: str = "#ffffff"
     font_size: int | None = None
@@ -110,12 +112,19 @@ def _parse_key(where: str, raw: dict, base: Path) -> KeySpec:
             raise ConfigError(f"{where}: interval must be a number of seconds >= 0.1")
     icon = raw.get("icon")
     if icon is not None:
-        icon = Path(icon).expanduser()
-        if not icon.is_absolute():
-            icon = base / icon
+        if icons.is_glyph_ref(str(icon)):
+            try:
+                icon = icons.parse(str(icon))
+            except icons.UnknownIcon as e:
+                raise ConfigError(f"{where}: {e}") from None
+        else:
+            icon = Path(icon).expanduser()
+            if not icon.is_absolute():
+                icon = base / icon
     return KeySpec(
         label=str(raw.get("label", "")),
         icon=icon,
+        icon_color=raw.get("icon_color"),
         bg=raw.get("bg", "#000000"),
         fg=raw.get("fg", "#ffffff"),
         font_size=raw.get("font_size"),

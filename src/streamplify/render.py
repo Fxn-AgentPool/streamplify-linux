@@ -6,6 +6,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
+from . import icons
 from .config import KeySpec
 from .device import KEY_SIZE
 
@@ -31,6 +32,14 @@ def _icon(path: Path, box: int) -> Image.Image | None:
         return None
     im = im.convert("RGBA")
     return ImageOps.contain(im, (box, box), Image.LANCZOS)
+
+
+def load_icon(spec: KeySpec, box: int) -> Image.Image | None:
+    if spec.icon is None:
+        return None
+    if isinstance(spec.icon, icons.Glyph):
+        return icons.render_glyph(spec.icon, box, spec.icon_color or spec.fg)
+    return _icon(spec.icon, box)
 
 
 def _wrap(text: str, f, width: int, draw: ImageDraw.ImageDraw) -> list[str]:
@@ -66,7 +75,7 @@ def render_key(spec: KeySpec, *, pressed: bool = False, font_path: Path | None =
     draw = ImageDraw.Draw(im)
     inner = KEY_SIZE - 2 * PAD
 
-    icon = _icon(spec.icon, inner if not spec.label else int(inner * 0.62)) if spec.icon else None
+    icon = load_icon(spec, int(inner * 0.72) if not spec.label else int(inner * 0.62))
     if icon is not None:
         top = PAD if spec.label else (KEY_SIZE - icon.height) // 2
         im.paste(icon, ((KEY_SIZE - icon.width) // 2, top), icon)

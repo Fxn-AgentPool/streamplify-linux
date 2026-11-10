@@ -37,6 +37,34 @@ cp systemd/streamplify.service ~/.config/systemd/user/
 systemctl --user enable --now streamplify
 ```
 
+### Hyprland
+
+Plain Hyprland doesn't activate `graphical-session.target` (unless you use
+`uwsm`), and systemd services don't see `WAYLAND_DISPLAY` by default, so start
+the client from `hyprland.conf` instead:
+
+```
+exec-once = streamplify run
+```
+
+Or, to keep the systemd unit (restart on crash), export the session
+environment first:
+
+```
+exec-once = dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP HYPRLAND_INSTANCE_SIGNATURE
+exec-once = systemctl --user start streamplify
+```
+
+Install `wtype` for hotkeys. For window-manager actions, `hyprctl` is more
+reliable than simulated keys:
+
+```toml
+[pages.main.12]
+icon = "tabler:layout-grid"
+label = "WS 3"
+run = "hyprctl dispatch workspace 3"
+```
+
 ## Config
 
 Keys are numbered in reading order, 1 = top-left, 15 = bottom-right.

@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import icons
+from .actions import HotkeyError, parse_combo
 from .device import COLS, KEY_COUNT, key_at
 
 DEFAULT_PATH = Path("~/.config/streamplify/config.toml").expanduser()
@@ -89,6 +90,11 @@ def _parse_key(where: str, raw: dict, base: Path) -> KeySpec:
     if len(actions) > 1:
         raise ConfigError(f"{where}: only one action allowed, got {', '.join(actions)}")
     action = Action(actions[0], raw[actions[0]]) if actions else None
+    if action and action.kind == "hotkey":
+        try:
+            parse_combo(str(action.value))
+        except HotkeyError as e:
+            raise ConfigError(f"{where}: {e}") from None
     if action and action.kind == "brightness":
         v = action.value
         if not (isinstance(v, int) or (isinstance(v, str) and v[:1] in "+-" and v[1:].isdigit())):

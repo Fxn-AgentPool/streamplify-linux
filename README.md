@@ -118,6 +118,27 @@ If a `mic` or `nowplaying` key has its own action, that action runs instead of t
 Widgets only run while their page is visible, and a key is only re-sent
 to the deck when its picture actually changes.
 
+### Hotkeys
+
+`hotkey` presses a key combo, including keys your keyboard doesn't have:
+
+```toml
+hotkey = "ctrl+shift+m"
+hotkey = "F13"                 # F1–F35: great for app-specific bindings (OBS, Discord, …)
+hotkey = "ctrl+alt+F20"
+hotkey = "XF86AudioMute"       # any X keysym name
+hotkey = "super+enter"
+```
+
+- Modifiers: `ctrl`, `shift`, `alt`, `altgr`, `super` (aliases `win`, `meta`, `logo`).
+- Friendly names: `enter`, `esc`, `tab`, `space`, `backspace`, `delete`, `home`, `end`,
+  `pageup`, `pagedown`, arrows, `print`, `menu`, … Single letters are case-insensitive.
+- Anything else is an [X keysym name](https://gitlab.freedesktop.org/xorg/proto/xorgproto/-/blob/master/include/X11/XF86keysym.h)
+  and **case-sensitive** (`XF86AudioMute`, `XF86Launch5`, `dead_acute`).
+- Needs `xdotool` on X11. On Wayland it uses `wtype`, which works on compositors with the
+  virtual-keyboard protocol (Sway, Hyprland and other wlroots-based ones). GNOME doesn't
+  support that protocol.
+
 See [`src/streamplify/example.toml`](src/streamplify/example.toml) for a full example.
 
 ## Roadmap

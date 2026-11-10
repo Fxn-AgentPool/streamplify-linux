@@ -8,8 +8,26 @@ version = "0.1.0"
 description = "Linux client for the Streamplify DECK"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
-dependencies = ["hid>=1.0.5", "pillow>=10"]
+requires-python = ">=3.11"
+dependencies = ["hid>=1.0.5", "pillow>=10.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+streamplify = "streamplify.cli:main"
+
+[tool.setuptools.package-data]
+streamplify = ["example.toml"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,0 +1,62 @@
+# Streamplify DECK config. Reloaded automatically when saved.
+# Keys are numbered in reading order:
+#    1  2  3  4  5
+#    6  7  8  9 10
+#   11 12 13 14 15
+#
+# Per key: label, icon (png/jpg/gif path), bg, fg, font_size, and ONE action:
+#   run = "shell command"         url = "https://..."
+#   hotkey = "ctrl+shift+m"       page = "name"     back = true
+#   brightness = 60 | "+10" | "-10"
+
+brightness = 80
+start_page = "main"
+# font = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+[pages.main.1]
+label = "Terminal"
+bg = "#2c3e50"
+run = "x-terminal-emulator"
+
+[pages.main.2]
+label = "Files"
+bg = "#2980b9"
+run = "xdg-open ~"
+
+[pages.main.3]
+label = "GitHub"
+bg = "#24292f"
+url = "https://github.com"
+
+[pages.main.5]
+label = "Media"
+bg = "#8e44ad"
+page = "media"
+
+[pages.main.14]
+label = "Dim"
+bg = "#34495e"
+brightness = "-20"
+
+[pages.main.15]
+label = "Bright"
+bg = "#f39c12"
+brightness = "+20"
+
+[pages.media.1]
+label = "Prev"
+run = "playerctl previous"
+
+[pages.media.2]
+label = "Play / Pause"
+bg = "#27ae60"
+run = "playerctl play-pause"
+
+[pages.media.3]
+label = "Next"
+run = "playerctl next"
+
+[pages.media.11]
+label = "Back"
+bg = "#c0392b"
+back = true
